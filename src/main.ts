@@ -46,27 +46,28 @@ class SlackApi {
     return this.membersInfo;    
   }
 
-  getEmailBySlackId(slackId: string){
+  getEmailBySlackId(slackId: string): string{
+    let email: string = '';
     let membersInfo = this.getSlackMembers();
     membersInfo.forEach(memberInfo => {
       if(memberInfo.name == slackId) {
         console.log('DEBUG: email = ' + memberInfo.profile.email);
-        return memberInfo.profile.email;
+        email = memberInfo.profile.email;
       }
     });
 
-    return null;
+    return email;
   }
 }
 
-class GCalenderApi {
+class GCalendarApi {
   
   createRadomId() {
-    return Math.random().toString(36);
+    return Math.random().toString(36).slice(-8);
   }
 
   formatEmailJson(emails) {
-    let jsonEmails = [];
+    let jsonEmails= [];
     emails.forEach(email => {
       jsonEmails.push({email:email})
     });
@@ -74,9 +75,9 @@ class GCalenderApi {
     return jsonEmails;
   }
 
-  createCalender(name: string, attendeeEmails, start, end) {
+  createCalendar(name: string, attendeeEmails: string[], start, end) {
     const calendarId = "primary";
-    const conferenceType = "hangoutMeet";
+    const conferenceType = "hangoutsMeet";
     const randomId = this.createRadomId();
 
     // Create config for calender info
@@ -101,13 +102,12 @@ class GCalenderApi {
     };
     console.log('DEBUG: calendarConfig = ' + JSON.stringify(calendarConfig));
 
-    // Create Calender
+    // Create Calendar
     return Calendar.Events.insert(calendarConfig, calendarId, { conferenceDataVersion: 1 });
 }
 
-// TODO: うまく実装できていない。（"DEBUG: slackIds = [function toString() { [native code] }]"のようにnative codeと表示されてしまう）
 function array2string(arr: string[]): string {
-  return '[' + arr.toString + ']';
+  return '[' + arr.join(', ') + ']';
 }
 
 function doPost(e) {
@@ -117,7 +117,7 @@ function doPost(e) {
 
   // Call API Classes
   let slackApi = new SlackApi(token);
-  let gcalApi = new GCalenderApi();
+  let gcalApi = new GCalendarApi();
 
   // Extract slack ids from args
   const args = e.parameter.text.split(' ');
@@ -129,10 +129,14 @@ function doPost(e) {
   console.log('DEBUG: slackIds = ' + array2string(slackIds));
 
   // Get Emails by Slack IDs
-  // TODO: attendeeEmailsにEmailが入らない（slackApi.getEmailBySlackId(id)の中ではEmailは取得できている）
   let attendeeEmails: string[] = [];
+  const regEmail = /^[A-Za-z0-9]{1}[A-Za-z0-9_.-]*@{1}[A-Za-z0-9_.-]{1,}.[A-Za-z0-9]{1,}$/;
   slackIds.forEach((id) => {
-    attendeeEmails.push(slackApi.getEmailBySlackId(id));
+    let email = slackApi.getEmailBySlackId(id);
+    // remove if not fit email format
+    if(regEmail.test(email)) {
+      attendeeEmails.push(slackApi.getEmailBySlackId(id));
+    }
   });
   console.log('DEBUG: attendeeEmails = ' + array2string(attendeeEmails));
 
@@ -144,10 +148,10 @@ function doPost(e) {
 
   // Create Calendar if attendee Email is existed
   if (attendeeEmails.length){
-    const calendarObj = gcalApi.createCalender("TMP MTG", attendeeEmails, start, end);
+    const calendarObj = gcalApi.createCalendar("temporary meeting", attendeeEmails, start, end);
     const request2slack = {
       response_type : "in_channel", // Visible all users in channel
-      text: su + ' ' + calendarObj.hangoutLink
+      text: 'Temporary meeting is created: ' + calendarObj.hangoutLink
     };
   } else {
     const request2slack = { text: "ERROR: cannot find users."};
